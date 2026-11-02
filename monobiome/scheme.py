@@ -1,3 +1,4 @@
+from typing import Literal
 from functools import cache
 from collections.abc import Callable
 from importlib.metadata import version
@@ -15,11 +16,28 @@ from monobiome.constants import (
 @cache
 def compute_dma_map(
     dT: float,
-    metric: Callable | None = None
+    metric: Callable | None = None,
+    lightness_direction: Literal["lighter", "darker"] | None = None,
 ) -> dict[str, dict]:
     """
     For threshold `dT`, compute the nearest accent shades that exceed that
     threshold for every monotone shade.
+
+    `lightness_direction` restricts hue solutions relative to each monotone
+    based on its relative lightness. If `lighter`, we require that accent
+    lightnesses are strictly larger than the base; if "darker", we require
+    accents lightnesses are at most that of the base. If
+    `lightness_direction=None`, we recover undirected behavior and simply allow
+    either, which generally accepts the smallest lightness value satisfying the
+    distance constraint. Conceptually, accents on either "lightness side" of
+    the base satisfy the contrast requirements, but mixing very light and very
+    dark accents is generally not desired when we're solving for themes (e.g.,
+    an L40 base with 0.1 OKLCH distance could yield an L10 red accent but an
+    L60 blue accent, both lying on the sphere centered at the base; that's what
+    we're avoiding by specifying a direction). When a lightness direction is
+    specified and it's not possible for all accents to lie on the same side,
+    that's treated the same as a no-solution (i.e., omitted from the returned
+    map).
 
     Returns: map of minimum constraint satisfying accent colors for monotone
         spectra
@@ -36,6 +54,11 @@ def compute_dma_map(
         }
     """
 
+    if lightness_direction not in (None, "lighter", "darker"):
+        raise ValueError(
+            f"Unknown lightness direction: {lightness_direction!r}"
+        )
+
     if metric is None:
         metric = oklch_distance
     
@@ -51,10 +74,16 @@ def compute_dma_map(
         m_colors = oklch_color_map[m_name]
         
         for m_color in m_colors:
+            mL = m_color.coords()[0]
             acol_min_map = {}
             
             for a_name in accent_h_map:
                 a_colors = oklch_color_map[a_name]
+                if lightness_direction == "lighter":
+                    a_colors = [ac for ac in a_colors if ac.coords()[0] > mL]
+                elif lightness_direction == "darker":
+                    a_colors = [ac for ac in a_colors if ac.coords()[0] <= mL]
+
                 oklch_dists = filter(
                     lambda d: (d[1] - dT) >= 0,
                     [
@@ -72,8 +101,7 @@ def compute_dma_map(
             if len(acol_min_map) < len(accent_h_map):
                 continue
 
-            mL = m_color.coords()[0]
-            mL_acol_map[int(mL*100)] = acol_min_map
+            mL_acol_map[round(mL*100)] = acol_min_map
         dT_mL_acol_map[m_name] = mL_acol_map
 
     return dT_mL_acol_map
@@ -91,7 +119,11 @@ def generate_scheme_groups(
     accent_color_map: dict[str, str],
 ) -> tuple[list[tuple[str, str]], ...]:
     """
-    Parameters:
+    Note: based on the requested mode, we explicitly solve for the intended
+    lightness direction of the accents to ensure the solved scheme is cohesive
+    (e.g., not one very bright accent and one very dark accent).
+
+    Args:
         mode: one of ["dark", "light"]
         biome: biome setting
         metric: one of ["wcag", "oklch", "lightness"]
@@ -104,7 +136,12 @@ def generate_scheme_groups(
     }
     
     metric_func = metric_map[metric]
-    dT_mL_acol_map = compute_dma_map(distance, metric=metric_func)
+    l_dir = "lighter" if mode == "dark" else "darker",
+    dT_mL_acol_map = compute_dma_map(
+        distance,
+        metric=metric_func,
+        lightness_direction=l_dir,
+    )
     Lma_map = {
         m_name: mL_acol_dict[l_base]
         for m_name, mL_acol_dict in dT_mL_acol_map.items()
@@ -122,8 +159,11 @@ def generate_scheme_groups(
     if len(Lma_map) < len(monotone_h_map):
         print(f"Warning: partial scheme coverage for {l_base=}@{distance=}")
     if biome not in Lma_map:
-        print(f"Biome {biome} unable to meet {metric} constraints")
-    accent_colors = Lma_map.get(biome, {})
+        raise ValueError(
+            f"Biome {biome} unable to meet {metric} constraints "
+            f"for {mode} mode at {l_base=}@{distance=}"
+        )
+    accent_colors = Lma_map[biome]
     
     meta_pairs = [
         ("version", version("monobiome")),
@@ -165,7 +205,7 @@ def generate_scheme_groups(
         ("white", f"f{{{{{biome}.l{l_base+term_fg_gap-2*l_step}}}}}"),
     ]
     for color_name, mb_accent in accent_color_map.items():
-        aL = int(100*accent_colors[mb_accent].coords()[0])
+        aL = round(100*accent_colors[mb_accent].coords()[0])
         accent_pairs.append(
             (
                 color_name,

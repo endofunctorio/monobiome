@@ -130,6 +130,13 @@ using the `monobiome` CLI:
   This calculates the accents a distance of `0.42` units in Oklab space from the
   `grassland` monotone base at a lightness of `20`, and writes the output to
   `scheme.toml`.
+
+  Note that solving for accents on the sphere surface is generally prone to
+  inconsistent palettes provided different hue curves may intersect the sphere
+  in several places. Scheme generation explicitly accounts for this by
+  enforcing a unified lightness direction among selected accents given the
+  intended mode (darker accents relative to the base in light mode, lighter
+  accents under dark mode).
 - Then populate the scheme file with concrete palette colors and push it
   through an app config template:
 
