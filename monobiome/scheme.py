@@ -136,7 +136,7 @@ def generate_scheme_groups(
     }
     
     metric_func = metric_map[metric]
-    l_dir = "lighter" if mode == "dark" else "darker",
+    l_dir = "lighter" if mode == "dark" else "darker"
     dT_mL_acol_map = compute_dma_map(
         distance,
         metric=metric_func,
@@ -262,6 +262,19 @@ def generate_scheme(
         term_color_map
     )
 
+    _, _, _, diff_dim_ac = generate_scheme_groups(
+        mode, biome, "oklch", 0.08,
+        l_sys, l_step,
+        fg_gap, grey_gap, term_fg_gap,
+        term_color_map
+    )
+    _, _, _, diff_norm_ac = generate_scheme_groups(
+        mode, biome, "oklch", 0.08,
+        l_sys + term_bright_offset, l_step,
+        fg_gap, grey_gap, term_fg_gap,
+        term_color_map
+    )
+
     _, _, vim_mt, vim_ac = generate_scheme_groups(
         mode, biome, metric, distance,
         l_app, l_step,
@@ -286,12 +299,15 @@ def generate_scheme(
 
     scheme_pairs += ["", "[term]"]
     scheme_pairs += pair_strings(term)
-
     scheme_pairs += ["", "[term.normal]"]
     scheme_pairs += pair_strings(term_norm_ac)
-
     scheme_pairs += ["", "[term.bright]"]
     scheme_pairs += pair_strings(term_bright_ac)
+
+    scheme_pairs += ["", "[diff]"]
+    scheme_pairs += pair_strings(diff_norm_ac)
+    scheme_pairs += ["", "[diff.dim]"]
+    scheme_pairs += pair_strings(diff_dim_ac)
 
     scheme_pairs += ["", "[vim]"]
     scheme_pairs += pair_strings(vim_mt)
